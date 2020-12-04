@@ -171,29 +171,49 @@ instance ever wants to modify the root node, it will make a copy
 first, just as it does for any other non-root node in the tree.
 
 
+# Basic testing
+
+Clojure 1.10.2-alpha4 modified with the patch
+`patches/clojure-1.10.2-alpha4-v1.patch` passes all tests included
+with Clojure.
+
+From evaluating the expressions shown above, the patched code
+successfully avoids allocating a new root node when a transient vector
+is created from a persistent vector with at most 32 elements.
+
+No attempt has been made to check if a transient vector is reduced in
+size from 33 or more elements, down to 32 elements, and changing its
+root node to point at the common singleton EMPTY_NODE.
+
+
 # Using `collection-check` library to test changes to `PersistentVector`
+
+Note: With a call like `collection-check.core/assert-vector-like 1e3
+[] gen/int)` as shown below, it is comparing the behavior of
+PersistentVector and TransientVector _against itself_.  Thus if no
+exceptions are thrown, the tests are likely to always pass, since the
+only thing you are testing is that the same implementation gives the
+same result when you perform the same sequence of operations on both.
+You cannot catch many bugs in an implementation of
+clojure.lang.PersistentVector or clojure.lang.TransientVector using
+such a call.
 
 ```clojure
 (require '[collection-check.core :as ccheck])
 (require '[clojure.test.check.generators :as gen])
 
-(ccheck/assert-vector-like 1e3 [] gen/int)
-(ccheck/assert-vector-like 1e4 [] gen/int)
+(time (ccheck/assert-vector-like 1e3 [] gen/int))
 ```
 
 If `assert-vector-like` passes, it simply computes for a while,
 running many tests, and eventually returns nil.
 
-Clojure 1.10.2-alpha4 modified with the patch
-`patches/clojure-1.10.2-alpha4-v1.patch` passes all tests included
-with Clojure, plus the ones above.  From evaluating the expressions
-shown above, it successfully avoids allocating a new root node when a
-transient vector is created from a persistent vector with at most 32
-elements.
+In order to compare an alternate implementation of PersistentVector
+and/or TransientVector against the original, it is necessary to give
+different class names for the modified versions.
 
-No attempt has been made to check if a transient vector is reduced in
-size from 33 or more elements, down to 32 elements, and changing its
-root node to point at the common singleton EMPTY_NODE.
+TBD: Try creating a patch with the proposed modified version of
+TransientVector as a different class name.
 
 
 # License
