@@ -1,0 +1,199 @@
+From 6d35f732fd538235bcbf607a3277e6753fc72d41 Mon Sep 17 00:00:00 2001
+From: Andy Fingerhut <andy_fingerhut@alum.wustl.edu>
+Date: Fri, 4 Dec 2020 07:17:53 -0800
+Subject: [PATCH] CLJ-2594: Reduce memory allocation when calling transient on
+ small vectors
+
+---
+ src/jvm/clojure/lang/PersistentVector.java | 32 ++++++++++------------
+ 1 file changed, 14 insertions(+), 18 deletions(-)
+
+diff --git a/src/jvm/clojure/lang/PersistentVector.java b/src/jvm/clojure/lang/PersistentVector.java
+index fcd9e46c..f1cde568 100644
+--- a/src/jvm/clojure/lang/PersistentVector.java
++++ b/src/jvm/clojure/lang/PersistentVector.java
+@@ -510,135 +510,131 @@ private Node popTail(int level, Node node){
+ 	else if(subidx == 0)
+ 		return null;
+ 	else
+ 		{
+ 		Node ret = new Node(root.edit, node.array.clone());
+ 		ret.array[subidx] = null;
+ 		return ret;
+ 		}
+ }
+ 
+ static final class TransientVector extends AFn implements ITransientVector, ITransientAssociative2, Counted{
+ 	volatile int cnt;
+ 	volatile int shift;
+ 	volatile Node root;
+ 	volatile Object[] tail;
++	final AtomicReference<Thread> edit;
+ 
+-	TransientVector(int cnt, int shift, Node root, Object[] tail){
++	TransientVector(int cnt, int shift, Node root, Object[] tail, AtomicReference<Thread> edit){
+ 		this.cnt = cnt;
+ 		this.shift = shift;
+ 		this.root = root;
+ 		this.tail = tail;
++		this.edit = edit;
+ 	}
+ 
+ 	TransientVector(PersistentVector v){
+-		this(v.cnt, v.shift, editableRoot(v.root), editableTail(v.tail));
++		this(v.cnt, v.shift, v.root, editableTail(v.tail),
++		     new AtomicReference<Thread>(Thread.currentThread()));
+ 	}
+ 
+ 	public int count(){
+ 		ensureEditable();
+ 		return cnt;
+ 	}
+ 	
+ 	Node ensureEditable(Node node){
+-		if(node.edit == root.edit)
++		if(node.edit == edit)
+ 			return node;
+-		return new Node(root.edit, node.array.clone());
++		return new Node(edit, node.array.clone());
+ 	}
+ 
+ 	void ensureEditable(){
+-		if(root.edit.get() == null)
++		if(edit.get() == null)
+ 			throw new IllegalAccessError("Transient used after persistent! call");
+-
+-//		root = editableRoot(root);
+-//		tail = editableTail(tail);
+-	}
+-
+-	static Node editableRoot(Node node){
+-		return new Node(new AtomicReference<Thread>(Thread.currentThread()), node.array.clone());
+ 	}
+ 
+ 	public PersistentVector persistent(){
+ 		ensureEditable();
+ //		Thread owner = root.edit.get();
+ //		if(owner != null && owner != Thread.currentThread())
+ //			{
+ //			throw new IllegalAccessError("Mutation release by non-owner thread");
+ //			}
+-		root.edit.set(null);
++		edit.set(null);
+ 		Object[] trimmedTail = new Object[cnt-tailoff()];
+ 		System.arraycopy(tail,0,trimmedTail,0,trimmedTail.length);
+ 		return new PersistentVector(cnt, shift, root, trimmedTail);
+ 	}
+ 
+ 	static Object[] editableTail(Object[] tl){
+ 		Object[] ret = new Object[32];
+ 		System.arraycopy(tl,0,ret,0,tl.length);
+ 		return ret;
+ 	}
+ 
+ 	public TransientVector conj(Object val){
+ 		ensureEditable();
+ 		int i = cnt;
+ 		//room in tail?
+ 		if(i - tailoff() < 32)
+ 			{
+ 			tail[i & 0x01f] = val;
+ 			++cnt;
+ 			return this;
+ 			}
+ 		//full tail, push into tree
+ 		Node newroot;
+-		Node tailnode = new Node(root.edit, tail);
++		Node tailnode = new Node(edit, tail);
+ 		tail = new Object[32];
+ 		tail[0] = val;
+ 		int newshift = shift;
+ 		//overflow root?
+ 		if((cnt >>> 5) > (1 << shift))
+ 			{
+-			newroot = new Node(root.edit);
++			newroot = new Node(edit);
+ 			newroot.array[0] = root;
+-			newroot.array[1] = newPath(root.edit,shift, tailnode);
++			newroot.array[1] = newPath(edit, shift, tailnode);
+ 			newshift += 5;
+ 			}
+ 		else
+ 			newroot = pushTail(shift, root, tailnode);
+ 		root = newroot;
+ 		shift = newshift;
+ 		++cnt;
+ 		return this;
+ 	}
+ 
+ 	private Node pushTail(int level, Node parent, Node tailnode){
+ 		//if parent is leaf, insert node,
+ 		// else does it map to an existing child? -> nodeToInsert = pushNode one more level
+ 		// else alloc new path
+ 		//return  nodeToInsert placed in parent
+ 		parent = ensureEditable(parent);
+ 		int subidx = ((cnt - 1) >>> level) & 0x01f;
+ 		Node ret = parent;
+ 		Node nodeToInsert;
+ 		if(level == 5)
+ 			{
+ 			nodeToInsert = tailnode;
+ 			}
+ 		else
+ 			{
+ 			Node child = (Node) parent.array[subidx];
+ 			nodeToInsert = (child != null) ?
+ 			               pushTail(level - 5, child, tailnode)
+-			                               : newPath(root.edit, level - 5, tailnode);
++			                               : newPath(edit, level - 5, tailnode);
+ 			}
+ 		ret.array[subidx] = nodeToInsert;
+ 		return ret;
+ 	}
+ 
+ 	final private int tailoff(){
+ 		if(cnt < 32)
+ 			return 0;
+ 		return ((cnt-1) >>> 5) << 5;
+ 	}
+ 
+ 	private Object[] arrayFor(int i){
+ 		if(i >= 0 && i < cnt)
+ 			{
+ 			if(i >= tailoff())
+@@ -765,31 +761,31 @@ static final class TransientVector extends AFn implements ITransientVector, ITra
+ 			}
+ 		int i = cnt - 1;
+ 		//pop in tail?
+ 		if((i & 0x01f) > 0)
+ 			{
+ 			--cnt;
+ 			return this;
+ 			}
+ 
+ 		Object[] newtail = editableArrayFor(cnt - 2);
+ 
+ 		Node newroot = popTail(shift, root);
+ 		int newshift = shift;
+ 		if(newroot == null)
+ 			{
+-			newroot = new Node(root.edit);
++			newroot = new Node(edit);
+ 			}
+ 		if(shift > 5 && newroot.array[1] == null)
+ 			{
+ 			newroot = ensureEditable((Node) newroot.array[0]);
+ 			newshift -= 5;
+ 			}
+ 		root = newroot;
+ 		shift = newshift;
+ 		--cnt;
+ 		tail = newtail;
+ 		return this;
+ 	}
+ 
+ 	private Node popTail(int level, Node node){
+ 		node = ensureEditable(node);
+-- 
+2.29.2
+
