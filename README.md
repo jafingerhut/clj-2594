@@ -188,32 +188,61 @@ root node to point at the common singleton EMPTY_NODE.
 
 # Using `collection-check` library to test changes to `PersistentVector`
 
-Note: With a call like `collection-check.core/assert-vector-like 1e3
-[] gen/int)` as shown below, it is comparing the behavior of
-PersistentVector and TransientVector _against itself_.  Thus if no
-exceptions are thrown, the tests are likely to always pass, since the
-only thing you are testing is that the same implementation gives the
-same result when you perform the same sequence of operations on both.
-You cannot catch many bugs in an implementation of
-clojure.lang.PersistentVector or clojure.lang.TransientVector using
-such a call.
+Note: With a call like `(ccheck/assert-vector-like 1e3 [] gen/int)` as
+shown below, it is comparing the behavior of PersistentVector and
+TransientVector _against itself_.  Thus if no exceptions are thrown,
+the tests will always pass, since the only thing you are testing is
+that the same implementation gives the same result when you perform
+the same sequence of operations on both.  You cannot catch many bugs
+in an implementation of clojure.lang.PersistentVector or
+clojure.lang.TransientVector using such a call.
+
+To use `collection-check` to test an alternate implementation of
+`PersistentVector` and/or `TransientVector` against the original, it
+is necessary to give different class names for the modified versions.
+
+The file `patches/PersistentVector2.java` was created by the following
+steps:
+
++ apply patch `patches/clojure-1.10.2-alpha4-v1.patch` to an
+  unmodified copy of Clojure 1.10.2-alpha4 source code
++ copy the file `src/jvm/clojure/lang/PersistentVector.java` to
+  `src/jvm/clojure/lang/PersistentVector2.java`
++ replace all occurrences of `PersistentVector` with
+  `PersistentVector2` in the file `PersistentVector2.java`.
++ restore the original unmodified version of `PersistentVector.java`
+
+Then:
++ Build a Clojure JAR from that using `mvn install`
++ Run a Clojure REPL using that JAR
 
 ```clojure
 (require '[collection-check.core :as ccheck])
 (require '[clojure.test.check.generators :as gen])
 
-(time (ccheck/assert-vector-like 1e3 [] gen/int))
+(class [])
+;; clojure.lang.PersistentVector
+
+(def empty-vec2 (clojure.lang.PersistentVector2/create []))
+
+(class empty-vec2)
+;; clojure.lang.PersistentVector2
+(class (empty empty-vec2))
+;; clojure.lang.PersistentVector2
+(class (transient empty-vec2))
+;; clojure.lang.PersistentVector2$TransientVector
+
+(time (ccheck/assert-vector-like 1e3 empty-vec2 gen/int))
+;; "Elapsed time: 10110.90654 msecs"
+;; nil
+
+(time (ccheck/assert-vector-like 1e4 empty-vec2 gen/int))
+;; "Elapsed time: 102832.88741 msecs"
+;; nil
 ```
 
 If `assert-vector-like` passes, it simply computes for a while,
 running many tests, and eventually returns nil.
-
-In order to compare an alternate implementation of PersistentVector
-and/or TransientVector against the original, it is necessary to give
-different class names for the modified versions.
-
-TBD: Try creating a patch with the proposed modified version of
-TransientVector as a different class name.
 
 
 # License
@@ -223,4 +252,3 @@ Copyright © 2020 Andy Fingerhut
 This program and the accompanying materials are made available under
 the terms of the Eclipse Public License 1.0 which is available at
 http://www.eclipse.org/org/documents/epl-v10.html
-
