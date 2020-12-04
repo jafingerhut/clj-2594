@@ -65,20 +65,57 @@ forms.
 
 With unmodified Clojure 1.10.1 (and probably all released Clojure
 versions back since transients were introduced), the following drawing
-shows that while `v1` and `v2`, both vectors with at most 32 elements,
-both point at `empty-singleton-node`, `v1b` has allocated its own
-copy.
+shows that `v1` and `v2`, vectors with at most 32 elements, both point
+at `empty-singleton-node`, `v1b` has allocated its own copy.
+
+There are 3 gray nodes in the drawing.  The two gray nodes that both
+have an edge to the third gray node are `v1` and `v2`.  The gray node
+that they both point at is the object `empty-singleton-node`.
 
 ```clojure
 (def empty-singleton-node clojure.lang.PersistentVector/EMPTY_NODE)
 (def v1 [0])
 (def v2 [-1])
+
+(d/view [empty-singleton-node v1 v2])
+```
+
+The drawing created below shows that `v1` and `v1b` do _not_ both
+point at `empty-singleton-node`.  Vector `v1b` has its own copy of the
+Java array referenced in the `array` field of its `root` node, but
+like the array for `v1`, both of these arrays contain 32 `nil`
+references.
+
+```clojure
 (def v1b (persistent! (transient v1)))
+(d/view [empty-singleton-node v1 v1b])
+```
 
-(d/view [empty-singleton-node v1 v2 v1b])
+This output shows the total size of all JVM objects referenced by a
+chain of references, starting at `v1` or `v1b`.
 
-(def d1 (d/sum [ [[1]] ]))
-(def d2 (d/sum [ (persistent! (transient [[1]])) ]))
+```clojure
+(def tmp (d/sum [v1 v2]))
+
+;; The total size of v1 and v2 is 360 bytes, counting their shared
+;; empty-singleton-node reference only once, since it only occupies
+;; memory once no matter how many times it is referenced.
+
+(def tmp (d/sum [v1 v1b]))
+
+;; The total size of v1 and v1b is 520 bytes, since v1b has a copy of
+;; empty-singleton-node.
+
+
+;; These vectors are from the original description of the Clojure
+;; ticket CLJ-2594
+
+(def v3 [[1]])
+(def v3b (persistent! (transient v3)))
+
+(d/view [empty-singleton-node v3 v3b])
+(def tmp (d/sum [v3]))
+(def tmp (d/sum [v3b]))
 ```
 
 This behavior is according to the current implementation of class
@@ -136,15 +173,6 @@ first, just as it does for any other non-root node in the tree.
 
 # Using `collection-check` library to test changes to `PersistentVector`
 
-Start a Clojure REPL with one of the two command lines below,
-depending upon whether you wish to use Clojure 1.10.1, or a patched
-version of the latest Clojure version (as of 2020-Dec).
-
-```bash
-$ clj -A:clj:socket:cljol:collection-check
-$ clj -A:clj:socket:cljol:collection-check:clj-patched
-```
-
 ```clojure
 (require '[collection-check.core :as ccheck])
 (require '[clojure.test.check.generators :as gen])
@@ -155,6 +183,17 @@ $ clj -A:clj:socket:cljol:collection-check:clj-patched
 
 If `assert-vector-like` passes, it simply computes for a while,
 running many tests, and eventually returns nil.
+
+Clojure 1.10.2-alpha4 modified with the patch
+`patches/clojure-1.10.2-alpha4-v1.patch` passes all tests included
+with Clojure, plus the ones above.  From evaluating the expressions
+shown above, it successfully avoids allocating a new root node when a
+transient vector is created from a persistent vector with at most 32
+elements.
+
+No attempt has been made to check if a transient vector is reduced in
+size from 33 or more elements, down to 32 elements, and changing its
+root node to point at the common singleton EMPTY_NODE.
 
 
 # License
