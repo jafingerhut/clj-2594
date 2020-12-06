@@ -148,12 +148,12 @@ transient vector.
 ```
 
 
-# Change to Clojure 1.10.2-alpha4 that reduce memory in this scenario
+# Change to Clojure 1.10.2-alpha4 that reduces memory in this scenario
 
 "This scenario", meaning situations where a transient vector is
 created from a persistent vector with at most 32 elements, modified in
-ways where it always remains under 32 elements, and is the changed
-into a persistent vector.
+ways where it always remains under 32 elements, and is then changed
+back into a persistent vector.
 
 The approach taken with the patch named
 `patches/clojure-1.10.2-alpha4-v1.patch` is to add a new field named
@@ -183,8 +183,8 @@ successfully avoids allocating a new root node when a transient vector
 is created from a persistent vector with at most 32 elements.
 
 No attempt has been made to check if a transient vector is reduced in
-size from 33 or more elements, down to 32 elements, and changing its
-root node to point at the common singleton EMPTY_NODE.
+size from 33 or more elements, down to 32 elements, that it changes
+its root node to point at the common singleton `EMPTY_NODE` again.
 
 
 # Using `collection-check` library to test changes to `PersistentVector`
@@ -214,8 +214,13 @@ steps:
 + restore the original unmodified version of `PersistentVector.java`
 
 Then:
-+ Build a Clojure JAR from that using `mvn install`
-+ Run a Clojure REPL using that JAR
+
++ Build a Clojure JAR from that using `mvn install`.  Using the latest
+  Clojure source code as of 2020-Dec-05, that will install a file
+  `~/.m2/repository/org/clojure/clojure/1.10.2-master-SNAPSHOT/clojure-1.10.2-master-SNAPSHOT.jar`
+  in your `~/.m2` directory.
++ Run a Clojure REPL using that JAR, e.g. using the `:clj-patched`
+  alias in this repository's `deps.edn` file.
 
 ```clojure
 (do
