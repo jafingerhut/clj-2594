@@ -1,4 +1,17 @@
+;; $ clj -A:clj -Sforce -Stree
+
+;; The latest version of test.check as of 2020-Dec-05 is 1.1.0,
+;; published 2020-Jul-10, according to search.maven.org
+
+;; The latest version of test.chuck as of 2020-Dec-05 is 0.2.10,
+;; published 2019-Aug-11, according to clojars.org
+
 {:paths ["src"]
+ :deps {collection-check/collection-check {:mvn/version "0.1.7"}
+        org.clojure/test.check {:mvn/version "1.1.0"}
+        com.gfredericks/test.chuck {:mvn/version "0.2.10"}
+        cljol/cljol {:git/url "https://github.com/jafingerhut/cljol"
+                     :sha "ff33d97f8375b4a0aaf758295e0aef7185ef9d6e"}}
  :aliases
  {;; Common alias to use for all Clojure/Java commands
   :clj {:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
@@ -6,7 +19,4 @@
   :clj-patched {:override-deps {org.clojure/clojure {:mvn/version "1.10.2-master-SNAPSHOT"}}}
   :socket
   {:jvm-opts
-   ["-Dclojure.server.repl={:port,50505,:accept,clojure.core.server/repl}"]}
-  :cljol {:extra-deps
-          {cljol/cljol {:git/url "https://github.com/jafingerhut/cljol"
-                        :sha "ff33d97f8375b4a0aaf758295e0aef7185ef9d6e"}}}}}
+   ["-Dclojure.server.repl={:port,50505,:accept,clojure.core.server/repl}"]}}}
