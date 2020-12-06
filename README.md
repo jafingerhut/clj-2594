@@ -7,11 +7,12 @@ Link to ticket: https://clojure.atlassian.net/browse/CLJ-2594
 
 Start a Clojure REPL with one of the two command lines below,
 depending upon whether you wish to use Clojure 1.10.1, or a patched
-version of the latest Clojure version (as of 2020-Dec).
+version of the latest Clojure version (as of 2020-Dec), i.e. version
+"1.10.2-master-SNAPSHOT".
 
 ```bash
-$ clj -A:clj:socket:cljol:collection-check
-$ clj -A:clj:socket:cljol:collection-check:clj-patched
+$ clj -A:clj:socket
+$ clj -A:clj:socket:clj-patched
 ```
 
 
@@ -188,7 +189,7 @@ root node to point at the common singleton EMPTY_NODE.
 
 # Using `collection-check` library to test changes to `PersistentVector`
 
-Note: With a call like `(ccheck/assert-vector-like 1e3 [] gen/int)` as
+Note: With a call like `(ccheck/assert-vector-like 1000 [] gen/int)` as
 shown below, it is comparing the behavior of PersistentVector and
 TransientVector _against itself_.  Thus if no exceptions are thrown,
 the tests will always pass, since the only thing you are testing is
@@ -217,13 +218,19 @@ Then:
 + Run a Clojure REPL using that JAR
 
 ```clojure
+(do
 (require '[collection-check.core :as ccheck])
 (require '[clojure.test.check.generators :as gen])
+(require '[com.fingerhutpress.clj-2594 :as c2])
+
+(def empty-vec2 (clojure.lang.PersistentVector2/create []))
+)
+
+
+(c2/print-cp)
 
 (class [])
 ;; clojure.lang.PersistentVector
-
-(def empty-vec2 (clojure.lang.PersistentVector2/create []))
 
 (class empty-vec2)
 ;; clojure.lang.PersistentVector2
@@ -232,17 +239,16 @@ Then:
 (class (transient empty-vec2))
 ;; clojure.lang.PersistentVector2$TransientVector
 
-(time (ccheck/assert-vector-like 1e3 empty-vec2 gen/int))
-;; "Elapsed time: 10110.90654 msecs"
-;; nil
+(def opts {:num-tests 5000, :reporter-fn c2/my-report-fn})
 
-(time (ccheck/assert-vector-like 1e4 empty-vec2 gen/int))
-;; "Elapsed time: 102832.88741 msecs"
-;; nil
+(ccheck/assert-vector-like opts empty-vec2 (gen/no-shrink gen/int))
+;; "Elapsed time: 45127.453922 msecs"
 ```
 
-If `assert-vector-like` passes, it simply computes for a while,
-running many tests, and eventually returns nil.
+Note that if `assert-vector-like` passes, it simply computes for a
+while, running many tests, and eventually returns nil.  When using the
+reporter function `c2/my-report-fn`, it prints a little bit more
+progress information as tests complete, and when all tests are done.
 
 
 # License
